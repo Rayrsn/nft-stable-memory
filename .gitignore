@@ -8,3 +8,4 @@ _MACOSX
 target/
 *.old.did
 .idea
+rust/dip721-nft-container/output.txt

@@ -23,12 +23,24 @@ use ic_cdk::{
 use ic_certified_map::Hash;
 use include_base64::include_base64;
 
+// use ic_stable_structures::Stable;
+
 mod http;
 
 const MGMT: Principal = Principal::from_slice(&[]);
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::default();
+}
+
+use std::collections::{BTreeMap, BTreeSet};
+
+type Users = BTreeSet<Principal>;
+type Store = BTreeMap<String, Vec<u8>>;
+
+thread_local! {
+    static USERS: RefCell<Users> = RefCell::default();
+    static STORE: RefCell<Store> = RefCell::default();
 }
 
 #[derive(CandidType, Deserialize)]
@@ -39,18 +51,20 @@ struct StableState {
 
 #[pre_upgrade]
 fn pre_upgrade() {
-    let state = STATE.with(|state| mem::take(&mut *state.borrow_mut()));
-    let hashes = http::HASHES.with(|hashes| mem::take(&mut *hashes.borrow_mut()));
-    let hashes = hashes.iter().map(|(k, v)| (k.clone(), *v)).collect();
-    let stable_state = StableState { state, hashes };
-    storage::stable_save((stable_state,)).unwrap();
+    USERS.with(|users| {
+        STORE.with(|store| {
+            let users_cloned = users.borrow().clone();
+            let store_cloned = store.borrow().clone();
+            storage::stable_save((users_cloned, store_cloned)).unwrap();
+        })
+    });
 }
+
 #[post_upgrade]
 fn post_upgrade() {
-    let (StableState { state, hashes },) = storage::stable_restore().unwrap();
-    STATE.with(|state0| *state0.borrow_mut() = state);
-    let hashes = hashes.into_iter().collect();
-    http::HASHES.with(|hashes0| *hashes0.borrow_mut() = hashes);
+    let (old_users, old_store): (Users, Store) = storage::stable_restore().unwrap();
+    USERS.with(|users| *users.borrow_mut() = old_users);
+    STORE.with(|store| *store.borrow_mut() = old_store);
 }
 
 #[derive(CandidType, Deserialize)]
